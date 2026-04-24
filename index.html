@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Cheese RNG</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600&display=swap" rel="stylesheet">
+
+<style>
+body {
+    margin: 0;
+    font-family: 'Fredoka', sans-serif;
+    background: radial-gradient(circle at top, #2a2a40, #0d0d18);
+    color: white;
+    overflow: hidden;
+}
+
+.game {
+    display: grid;
+    grid-template-columns: 1fr 2fr 1fr;
+    height: 100vh;
+}
+
+/* LEFT */
+.left {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+}
+
+/* BUTTON */
+#rollBtn {
+    width: 240px;
+    height: 240px;
+    background: url("Roll.png") center/cover no-repeat;
+    border: none;
+    cursor: pointer;
+    transition: transform 0.1s, filter 0.2s;
+}
+
+#rollBtn:active { transform: scale(0.9); }
+#rollBtn.cooldown { filter: brightness(0.4); }
+
+/* CENTER */
+.center {
+    text-align: center;
+    padding-top: 40px;
+}
+
+#cheeseName {
+    font-size: 34px;
+    margin-bottom: 5px;
+    transition: transform 0.2s;
+}
+
+#rarityText { opacity: 0.7; }
+
+#cheeseImg {
+    width: 260px;
+    transition: transform 0.2s, filter 0.2s;
+}
+
+/* RARE EFFECTS */
+.legendary {
+    animation: glow 0.5s ease-in-out 4 alternate;
+}
+@keyframes glow {
+    from { filter: drop-shadow(0 0 10px gold); }
+    to { filter: drop-shadow(0 0 30px orange); }
+}
+
+.shake {
+    animation: shake 0.3s;
+}
+@keyframes shake {
+    0%{transform:translate(0)}
+    25%{transform:translate(5px,-5px)}
+    50%{transform:translate(-5px,5px)}
+    75%{transform:translate(5px,5px)}
+    100%{transform:translate(0)}
+}
+
+#darkOverlay {
+    position: fixed;
+    inset: 0;
+    background: black;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+    z-index: 999;
+}
+
+/* RIGHT */
+.right {
+    padding: 10px;
+    overflow-y: auto;
+}
+
+.pop {
+    animation: pop 0.2s ease;
+}
+
+@keyframes pop {
+    0% { transform: scale(0.8); }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); }
+}
+
+.panel {
+    background: rgba(255,255,255,0.05);
+    padding: 10px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+}
+
+/* COLLECTION */
+.collection img {
+    width: 50px;
+    opacity: 0.2;
+}
+.collection img.found {
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+/* ACHIEVEMENTS */
+.achievement {
+    width: 50px;
+    opacity: 0.2;
+}
+.achievement.unlocked {
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+/* TOP BAR */
+.topbar {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 30px;
+}
+
+/* CUTSCENE */
+#cutscene {
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(circle, gold, black);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    animation: flash 0.2s alternate 6;
+}
+@keyframes flash {
+    from {opacity:0.5;}
+    to {opacity:1;}
+}
+</style>
+</head>
+
+<body>
+
+<div class="topbar">
+    <div>Rolls: <span id="rolls">0</span></div>
+    <div>Coins: <span id="coins">0</span></div>
+    <div>Luck: <span id="luck">1</span>x</div>
+    <div>Streak: <span id="streak">0</span></div>
+    <div>Prestige: <span id="prestige">0</span></div>
+    <div>PP: <span id="pp">0</span></div>
+</div>
+
+<div class="game">
+
+<div id="darkOverlay"></div>
+
+<div class="left">
+    <button id="rollBtn"></button>
+    <button onclick="reset()">Reset</button>
+</div>
+
+<div class="center">
+    <h2 id="cheeseName">ROLL</h2>
+    <div id="rarityText"></div>
+    <img id="cheeseImg">
+</div>
+
+<div class="right">
+
+<div class="panel">
+<b>Collection</b>
+<div id="collection" class="collection"></div>
+</div>
+
+<div class="panel">
+<b>Shop</b>
+<button onclick="upgrade()">+Luck (Cost: 50)</button>
+<button onclick="prestige()">Prestige (1000 rolls)</button>
+<div class="panel">
+</div>
+
+<div class="panel">
+<b>Achievements</b>
+<div id="achievements"></div>
+</div>
+
+<div class="panel">
+<b>Changelog</b>
+<ul id="changelog"></ul>
+</div>
+
+</div>
+</div>
+
+<div id="cutscene">
+<h1>WHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAT???!!!?!?!</h1>
+<img id="cutsceneImg" width="300">
+</div>
+
+<script>
+// ================= STATE =================
+let state={
+ rolls:0,
+ coins:0,
+ luck:1,
+ found:{},
+ achievements:{},
+ pity:0,
+ streak:0,
+ prestige: 0,
+ pp: 0,
+};
+
+// ====================== GOD DROP ======================
+
+function godDrop(c){
+ const overlay = document.getElementById("darkOverlay");
+ const img = document.getElementById("cheeseImg");
+ const name = document.getElementById("cheeseName");
+
+ // STEP 1: blackout (short, not 3 seconds)
+ overlay.style.opacity = 1;
+
+ setTimeout(() => {
+
+  // STEP 2: reveal phase
+  overlay.style.opacity = 0;
+
+  // BIG visual hit
+  document.body.classList.add("shake");
+  setTimeout(()=>document.body.classList.remove("shake"),300);
+
+  img.classList.add("pop","legendary");
+  setTimeout(()=>img.classList.remove("pop"),300);
+
+  name.textContent = "🔥 " + c.name.toUpperCase() + " 🔥";
+
+  // sound hit (reuse your system)
+  playSound(c.name);
+  playSound("sounds/giant.mp3");
+
+ }, 400);
+}
+
+// ================= DATA =================
+const cheeses=[
+ {name:"Moldy",chance:10,img:"moldy.png",value:1},
+ {name:"Common",chance:10,img:"common.png",value:1},
+ {name:"String",chance:10,img:"string.png",value:1},
+ {name:"American",chance:10,img:"american.png",value:1},
+ {name:"Blue",chance:10,img:"blue.png",value:1},
+ {name:"Parmesan",chance:10,img:"parmesan.png",value:1},
+
+ {name:"Rare",chance:25,img:"rare.png",value:3},
+
+ {name:"Epic",chance:2,img:"epic.png",value:7},
+ {name:"Mini",chance:2,img:"mini.png",value:12},
+ {name:"Giant",chance:2,img:"giant.png",value:14},
+ {name:"Radioactive",chance:2,img:"radioactive.png",value:16},
+ {name:"Pepper Jack",chance:2,img:"pepperjack.png",value:16},
+
+ {name:"Legendary",chance:3,img:"legendary.png",value:20},
+ {name:"Iced",chance:2,img:"iced.png",value:40},
+
+ {name:"Godly",chance:0.9,img:"godly.png",value:50},
+ {name:"CHEESE.exe",chance:0.1,img:"
+     exe.png",value:200},
+];
+
+// ==================== SOUND ===================
+
+const sounds = {};
+let audioUnlocked = false;
+
+function unlockAudio(){
+ if(audioUnlocked) return;
+
+ const a = new Audio("common.mp3"); // any file
+ a.volume = 0;
+ a.play().then(()=>{
+  a.pause();
+  audioUnlocked = true;
+ }).catch(()=>{});
+}
+
+function playSound(name){
+
+    btn.onmousedown=()=>{
+ unlockAudio(); // REQUIRED for sound
+ holding=true;
+ loop();
+};
+
+ if(!audioUnlocked) return;
+
+ name = name.toLowerCase();
+
+ if(!sounds[name]){
+  sounds[name] = new Audio(name + ".mp3");
+ }
+
+ let s = sounds[name].cloneNode(); // allows overlap
+ s.volume = 0.6;
+
+ // 🎵 slight randomness = less repetitive
+ s.playbackRate = 0.95 + Math.random()*0.1;
+
+ s.play().catch(()=>{});
+}
+
+function playSound(name){
+ const audio = new Audio(name + ".mp3");
+ audio.volume = 0.6;
+ audio.play().catch(()=>{});
+}
+
+// ================= SAVE =================
+function save(){localStorage.setItem("save",JSON.stringify(state))}
+function load(){let s=JSON.parse(localStorage.getItem("save")); if(s) state=s}
+load();
+setInterval(save,3000);
+
+// ================= ROLL =================
+function roll(){
+ let weights = cheeses.map(c=>{
+  let w = c.chance;
+
+  // Only boost rare items with diminishing returns
+  if(c.chance <= 10){
+    w *= (1 + Math.log10(state.luck * 0.8)) * getPrestigeMultiplier();
+  }
+
+  return w;
+ });
+
+ // pity boosts ONLY rare pool
+ weights = weights.map((w,i)=>{
+  if(cheeses[i].chance <= 10){
+    return w + state.pity;
+  }
+  return w;
+ });
+
+ let total = weights.reduce((a,b)=>a+b,0);
+ let r = Math.random()*total;
+
+ for(let i=0;i<cheeses.length;i++){
+  if(r < weights[i]) return cheeses[i];
+  r -= weights[i];
+ }
+
+ return cheeses[0];
+}
+
+// prestige
+
+function getPrestigeMultiplier(){
+ return 1 + (state.pp * 0.25); // +25% luck per prestige point
+}
+
+function prestige(){
+ if(state.rolls < 1000) return;
+
+ let gainedPP = Math.floor(state.rolls / 1000);
+
+ state.pp += gainedPP;
+ state.prestige++;
+
+ // RESET PROGRESSION (keep prestige)
+ state.rolls = 0;
+ state.coins = 0;
+ state.luck = 1;
+ state.streak = 0;
+ state.pity = 0;
+ state.found = {};
+ state.achievements = {};
+
+ alert("Prestiged! +" + gainedPP + " PP");
+}
+
+// ================= DISPLAY =================
+function display(c){
+ let nameEl = document.getElementById("cheeseName");
+ let imgEl = document.getElementById("cheeseImg");
+playSound(c.name);
+
+ imgEl.classList.add("pop");
+setTimeout(()=>imgEl.classList.remove("pop"),200);
+
+ nameEl.textContent=c.name;
+ imgEl.src=c.img;
+
+ imgEl.classList.remove("legendary","shake");
+
+ if(c.chance <= 1){
+ godDrop(c);
+}
+else if(c.chance <= 4){
+ cutscene(c);
+  imgEl.classList.add("legendary");
+  document.body.classList.add("shake");
+  setTimeout(()=>document.body.classList.remove("shake"),300);
+}
+
+let gain = Math.floor(c.value * (1 + state.luck/8));
+
+// 🎯 CRIT SYSTEM
+let crit = false;
+if(Math.random() < 0.08){ // 8% chance
+  gain *= 3;
+  crit = true;
+}
+
+// combo system
+if(c.chance <= 10) state.streak++;
+else state.streak = 0;
+
+gain += state.streak;
+
+state.coins += gain;
+
+if(crit){
+ document.body.classList.add("shake");
+ setTimeout(()=>document.body.classList.remove("shake"),200);
+}
+
+ if(c.name==="Legendary" || c.name==="Godly") state.pity=0;
+ else state.pity++;
+
+ state.found[c.name]=true;
+
+ if(c.chance<=1) cutscene(c);
+
+ // small random bonus event
+if(Math.random() < 0.03){
+ let bonus = 50 + Math.floor(Math.random()*100);
+ state.coins += bonus;
+
+ document.getElementById("cheeseName").textContent = "BONUS +" + bonus;
+}
+}
+
+// ================= CUTSCENE =================
+function cutscene(c){
+ let cs=document.getElementById("cutscene");
+ document.getElementById("cutsceneImg").src=c.img;
+ cs.style.display="flex";
+ setTimeout(()=>cs.style.display="none",900);
+}
+
+// ================= COLLECTION =================
+function renderCollection(){
+ let el=document.getElementById("collection");
+ el.innerHTML="";
+ cheeses.forEach(c=>{
+  let img=document.createElement("img");
+  img.src=c.img;
+  if(state.found[c.name]) img.classList.add("found");
+  el.appendChild(img);
+ });
+}
+
+// ================= SHOP =================
+function upgrade(){
+ let cost = Math.floor(50 * Math.pow(1.6, state.luck));
+
+ if(state.coins >= cost){
+  state.coins -= cost;
+  state.luck += 0.15; // slower scaling
+ }
+}
+
+// ================= ACHIEVEMENTS =================
+const achievements=[
+ {id:"r10",cond:()=>state.rolls>=10,img:"10.png"},
+ {id:"r100",cond:()=>state.rolls>=100,img:"100.png"},
+ {id:"r500",cond:()=>state.rolls>=500,img:"500.png"},
+ {id:"r1000",cond:()=>state.rolls>=1000,img:"1000.png"},
+
+ {id:"c1k",cond:()=>state.coins>=1000,img:"coin1k.png"},
+ {id:"c10k",cond:()=>state.coins>=10000,img:"coin10k.png"},
+
+ {id:"legend",cond:()=>state.found["Legendary"],img:"legendary.png"},
+ {id:"god",cond:()=>state.found["Godly"],img:"godly.png"},
+
+ {id:"streak10",cond:()=>state.streak>=10,img:"streak10.png"},
+ {id:"all",cond:()=>Object.keys(state.found).length===cheeses.length,img:"all.png"},
+];
+
+function renderAchievements(){
+ let el=document.getElementById("achievements");
+ el.innerHTML="";
+ achievements.forEach(a=>{
+  if(a.cond()) state.achievements[a.id]=true;
+  let img=document.createElement("img");
+  img.src=a.img;
+  img.className="achievement "+(state.achievements[a.id]?"unlocked":"");
+  el.appendChild(img);
+ });
+}
+
+// ================= CHANGELOG =================
+const changelog=[
+  "ALOT"
+];
+
+function renderChangelog(){
+ let el=document.getElementById("changelog");
+ el.innerHTML="";
+ changelog.forEach(c=>{
+  let li=document.createElement("li");
+  li.textContent=c;
+  el.appendChild(li);
+ });
+}
+
+// ================= CLICK / HOLD =================
+let cooldown=false;
+let holding=false;
+
+function doRoll(){
+ if(cooldown && state.rolls < 100) return;
+
+ cooldown=true;
+
+ if(state.rolls < 100){
+  setTimeout(()=>cooldown=false,400);
+ } else cooldown=false;
+
+ document.getElementById("cheeseName").textContent="...";
+
+ let i=0;
+ let interval=setInterval(()=>{
+  document.getElementById("cheeseImg").src=cheeses[Math.floor(Math.random()*cheeses.length)].img;
+  i++;
+  if(i>6){
+   clearInterval(interval);
+   let c=roll();
+   state.rolls++;
+   display(c);
+   updateUI();
+  }
+ },70);
+}
+
+const btn=document.getElementById("rollBtn");
+
+btn.onmousedown=()=>{
+ holding=true;
+ loop();
+};
+btn.onmouseup=()=>holding=false;
+btn.onmouseleave=()=>holding=false;
+
+function loop(){
+ if(!holding) return;
+ doRoll();
+ setTimeout(loop,150);
+}
+
+// ================= UI =================
+function updateUI(){
+ document.getElementById("rolls").textContent=state.rolls;
+ document.getElementById("coins").textContent=state.coins;
+ document.getElementById("luck").textContent=state.luck.toFixed(1);
+ document.getElementById("streak").textContent=state.streak;
+ document.getElementById("prestige").textContent = state.prestige;
+ document.getElementById("pp").textContent = state.pp;
+
+ renderCollection();
+ renderAchievements();
+ renderChangelog();
+ save();
+}
+
+// ================= RESET =================
+function reset(){
+ localStorage.clear();
+ location.reload();
+}
+
+updateUI();
+</script>
+
+</body>
+</html>
