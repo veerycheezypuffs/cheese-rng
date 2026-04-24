@@ -287,8 +287,7 @@ const cheeses=[
  {name:"Iced",chance:2,img:"iced.png",value:40},
 
  {name:"Godly",chance:0.9,img:"godly.png",value:50},
- {name:"CHEESE.exe",chance:0.1,img:"
-     exe.png",value:200},
+ {name:"CHEESE.exe",chance:0.1,img:"exe.png",value:200},
 ];
 
 // ==================== SOUND ===================
@@ -307,37 +306,36 @@ function unlockAudio(){
  }).catch(()=>{});
 }
 
-function playSound(name){
+const soundCache = {};
+let audioUnlocked = false;
 
-    btn.onmousedown=()=>{
- unlockAudio(); // REQUIRED for sound
- holding=true;
- loop();
-};
+    function unlockAudio(){
+ if(audioUnlocked) return;
 
+ const test = new Audio("common.mp3");
+ test.volume = 0;
+
+ test.play().then(() => {
+  test.pause();
+  audioUnlocked = true;
+ }).catch(() => {});
+}
+
+    function playSound(name){
  if(!audioUnlocked) return;
 
  name = name.toLowerCase();
 
- if(!sounds[name]){
-  sounds[name] = new Audio(name + ".mp3");
+ if(!soundCache[name]){
+  soundCache[name] = new Audio(name + ".mp3");
  }
 
- let s = sounds[name].cloneNode(); // allows overlap
+ const s = soundCache[name].cloneNode();
  s.volume = 0.6;
+ s.playbackRate = 0.95 + Math.random() * 0.1;
 
- // 🎵 slight randomness = less repetitive
- s.playbackRate = 0.95 + Math.random()*0.1;
-
- s.play().catch(()=>{});
+ s.play().catch(() => {});
 }
-
-function playSound(name){
- const audio = new Audio(name + ".mp3");
- audio.volume = 0.6;
- audio.play().catch(()=>{});
-}
-
 // ================= SAVE =================
 function save(){localStorage.setItem("save",JSON.stringify(state))}
 function load(){let s=JSON.parse(localStorage.getItem("save")); if(s) state=s}
