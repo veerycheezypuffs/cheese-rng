@@ -292,50 +292,25 @@ const cheeses=[
 
 // ==================== SOUND ===================
 
-const sounds = {};
+const soundCache = {};
 let audioUnlocked = false;
 
 function unlockAudio(){
  if(audioUnlocked) return;
-
- const a = new Audio("common.mp3"); // any file
+ const a = new Audio("common.mp3");
  a.volume = 0;
- a.play().then(()=>{
-  a.pause();
-  audioUnlocked = true;
- }).catch(()=>{});
+ a.play().then(()=>{ a.pause(); audioUnlocked = true; });
 }
 
-const soundCache = {};
-let audioUnlocked = false;
-
-    function unlockAudio(){
- if(audioUnlocked) return;
-
- const test = new Audio("common.mp3");
- test.volume = 0;
-
- test.play().then(() => {
-  test.pause();
-  audioUnlocked = true;
- }).catch(() => {});
-}
-
-    function playSound(name){
+function playSound(name){
  if(!audioUnlocked) return;
 
- name = name.toLowerCase();
-
- if(!soundCache[name]){
-  soundCache[name] = new Audio(name + ".mp3");
- }
-
- const s = soundCache[name].cloneNode();
+ const s = new Audio(name + ".mp3");
  s.volume = 0.6;
- s.playbackRate = 0.95 + Math.random() * 0.1;
-
- s.play().catch(() => {});
+ s.playbackRate = 0.95 + Math.random()*0.1;
+ s.play().catch(()=>{});
 }
+    
 // ================= SAVE =================
 function save(){localStorage.setItem("save",JSON.stringify(state))}
 function load(){let s=JSON.parse(localStorage.getItem("save")); if(s) state=s}
@@ -566,6 +541,7 @@ function doRoll(){
 }
 
 const btn=document.getElementById("rollBtn");
+    let holding = false;
 
 btn.onmousedown=()=>{
  holding=true;
