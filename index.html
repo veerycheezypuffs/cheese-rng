@@ -541,7 +541,6 @@ function doRoll(){
 }
 
 const btn=document.getElementById("rollBtn");
-    let holding = false;
 
 btn.onmousedown=()=>{
  holding=true;
@@ -570,6 +569,7 @@ function updateUI(){
  renderChangelog();
  save();
 }
+    document.addEventListener("click", unlockAudio, { once: true });
 
 // ================= RESET =================
 function reset(){
@@ -578,6 +578,7 @@ function reset(){
 }
 
 updateUI();
+
 </script>
 
 </body>
