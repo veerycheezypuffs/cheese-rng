@@ -102,10 +102,71 @@ body {
     animation: pop 0.2s ease;
 }
 
+button {
+    font-family: 'Fredoka', sans-serif;
+    background: linear-gradient(145deg, #3a3a5a, #1a1a2e);
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+    letter-spacing: 0.5px;
+}
+
+/* Hover */
+button:hover {
+    transform: translateY(-2px);
+    filter: brightness(1.2);
+    box-shadow: 0 6px 14px rgba(0,0,0,0.6);
+}
+
+/* Click */
+button:active {
+    transform: scale(0.95);
+}
+
+/* Disabled feel */
+button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+button.shop {
+    width: 100%;
+    margin-top: 6px;
+    background: linear-gradient(145deg, #2a5a3a, #1a2e22);
+}
+
+button.shop:hover {
+    filter: brightness(1.25);
+}
+
+button.danger {
+    background: linear-gradient(145deg, #5a2a2a, #2e1a1a);
+}
+
+button.danger:hover {
+    filter: brightness(1.3);
+}
+
 @keyframes pop {
     0% { transform: scale(0.8); }
     50% { transform: scale(1.2); }
     100% { transform: scale(1); }
+}
+
+button.affordable {
+    animation: pulse 0.8s infinite alternate;
+}
+
+button.unaffordable {
+    background: #222 !important;
+    color: #777;
+    box-shadow: none;
+    cursor: not-allowed;
+    filter: grayscale(1);
 }
 
 .panel {
@@ -145,6 +206,10 @@ body {
     gap: 30px;
 }
 
+button.toggle {
+    background: linear-gradient(145deg, #2a3a5a, #1a2235);
+}
+
 /* CUTSCENE */
 #cutscene {
     position: fixed;
@@ -180,7 +245,7 @@ body {
 
 <div class="left">
     <button id="rollBtn"></button>
-    <button onclick="reset()">Reset</button>
+    <button class="danger" onclick="reset()">Reset</button>
 </div>
 
 <div class="center">
@@ -198,10 +263,16 @@ body {
 
 <div class="panel">
 <b>Shop</b>
-<button onclick="upgrade()">+Luck (Cost: 50)</button>
-<button onclick="prestige()">Prestige (1000 rolls)</button>
+<button id="luckBtn" class="shop" onclick="upgrade()"></button>
+<button class="shop" onclick="prestige()">Prestige (1000 rolls)</button>
 <div class="panel">
+<b>Multi Roll</b><br><br>
+
+<button class="shop" onclick="batchRoll(10)">Roll x10</button>
+<button class="shop" onclick="batchRoll(50)">Roll x50</button>
+<button class="shop" onclick="batchRoll(100)">Roll x100</button>
 </div>
+<div class="panel">
 
 <div class="panel">
 <b>Achievements</b>
@@ -211,6 +282,13 @@ body {
 <div class="panel">
 <b>Changelog</b>
 <ul id="changelog"></ul>
+</div>
+
+<div class="panel">
+<b>Settings</b><br>
+<button class="toggle" onclick="toggleCutscenes()">
+    Cutscenes: <span id="cutsceneToggle">ON</span>
+</button>
 </div>
 
 </div>
@@ -233,11 +311,21 @@ let state={
  streak:0,
  prestige: 0,
  pp: 0,
+ noCutscenes: false,
+ idleLevel: 0,
 };
 
 // ====================== GOD DROP ======================
 
 function godDrop(c){
+
+if(state.noCutscenes){
+   // minimal version (no flash/shake)
+   document.getElementById("cheeseName").textContent = c.name;
+   playSound(c.name);
+   return;
+ }
+
  const overlay = document.getElementById("darkOverlay");
  const img = document.getElementById("cheeseImg");
  const name = document.getElementById("cheeseName");
@@ -261,7 +349,7 @@ function godDrop(c){
 
   // sound hit (reuse your system)
   playSound(c.name);
-  playSound("giant.mp3");
+  playSound("sounds/giant.mp3");
 
  }, 400);
 }
@@ -289,6 +377,43 @@ const cheeses=[
  {name:"Godly",chance:0.9,img:"godly.png",value:50},
  {name:"EXE",chance:0.1,img:"exe.png",value:200},
 ];
+
+function getLuckCost(){
+ return Math.floor(50 * Math.pow(1.6, state.luck));
+}
+
+function batchRoll(amount){
+ if(rolling) return;
+
+ document.body.classList.add("shake");
+ setTimeout(()=>document.body.classList.remove("shake"), 300);
+
+ let count = 0;
+
+ function next(){
+  if(count >= amount) return;
+
+  doRoll();
+  count++;
+
+  setTimeout(next, 120);
+ }
+
+ next();
+}
+
+// ================== IDLE ====================
+
+function upgradeIdle(){
+ let cost = getIdleCost();
+ if(state.coins < cost) return;
+
+ state.coins -= cost;
+ state.idleLevel++;
+
+ document.body.classList.add("pop");
+ setTimeout(()=>document.body.classList.remove("pop"),150);
+}
 
 // ==================== SOUND ===================
 
@@ -324,7 +449,7 @@ function roll(){
 
   // Only boost rare items with diminishing returns
   if(c.chance <= 10){
-    w *= (1 + Math.log10(state.luck * 0.8)) * getPrestigeMultiplier();
+    w *= (1 + Math.sqrt(state.luck) * 0.35) * getPrestigeMultiplier();
   }
 
   return w;
@@ -439,10 +564,17 @@ if(Math.random() < 0.03){
 
 // ================= CUTSCENE =================
 function cutscene(c){
+ if(state.noCutscenes) return;
+
  let cs=document.getElementById("cutscene");
  document.getElementById("cutsceneImg").src=c.img;
  cs.style.display="flex";
  setTimeout(()=>cs.style.display="none",900);
+}
+
+function toggleCutscenes(){
+ state.noCutscenes = !state.noCutscenes;
+ updateUI();
 }
 
 // ================= COLLECTION =================
@@ -459,12 +591,16 @@ function renderCollection(){
 
 // ================= SHOP =================
 function upgrade(){
- let cost = Math.floor(50 * Math.pow(1.6, state.luck));
+ let cost = getLuckCost();
 
- if(state.coins >= cost){
-  state.coins -= cost;
-  state.luck += 0.15; // slower scaling
- }
+ if(state.coins < cost) return;
+
+ state.coins -= cost;
+ state.luck += 0.15;
+
+ // satisfying feedback
+ document.body.classList.add("pop");
+ setTimeout(()=>document.body.classList.remove("pop"),150);
 }
 
 // ================= ACHIEVEMENTS =================
@@ -515,29 +651,52 @@ function renderChangelog(){
 let cooldown=false;
 let holding=false;
 
+let rolling = false;
+let rollTimer = null;
+
+function unlockRoll(){
+ rolling = false;
+
+ if(rollTimer){
+  clearTimeout(rollTimer);
+  rollTimer = null;
+ }
+}
+
 function doRoll(){
- if(cooldown && state.rolls < 100) return;
+ if(rolling) return;
+ rolling = true;
 
- cooldown=true;
+ document.getElementById("cheeseName").textContent = "...";
 
- if(state.rolls < 100){
-  setTimeout(()=>cooldown=false,400);
- } else cooldown=false;
+ let i = 0;
 
- document.getElementById("cheeseName").textContent="...";
+ function spin(){
+  try {
+   document.getElementById("cheeseImg").src =
+     cheeses[Math.floor(Math.random()*cheeses.length)].img;
 
- let i=0;
- let interval=setInterval(()=>{
-  document.getElementById("cheeseImg").src=cheeses[Math.floor(Math.random()*cheeses.length)].img;
-  i++;
-  if(i>6){
-   clearInterval(interval);
-   let c=roll();
-   state.rolls++;
-   display(c);
-   updateUI();
+   i++;
+
+   if(i > 6){
+    let c = roll();
+    state.rolls++;
+    display(c);
+    updateUI();
+
+    unlockRoll(); // ✅ ALWAYS SAFE UNLOCK
+    return;
+   }
+
+   rollTimer = setTimeout(spin, 70);
+
+  } catch(e){
+   console.error("Roll error:", e);
+   unlockRoll(); // 💥 prevents permanent lock even if something breaks
   }
- },70);
+ }
+
+ spin();
 }
 
 const btn=document.getElementById("rollBtn");
@@ -563,13 +722,51 @@ function updateUI(){
  document.getElementById("streak").textContent=state.streak;
  document.getElementById("prestige").textContent = state.prestige;
  document.getElementById("pp").textContent = state.pp;
+ document.getElementById("cutsceneToggle").textContent = state.noCutscenes ? "OFF" : "ON";
 
  renderCollection();
  renderAchievements();
  renderChangelog();
  save();
+
+let cost = getLuckCost();
+let btn = document.getElementById("luckBtn");
+
+btn.textContent = `+Luck (Cost: ${cost})`;
+
+if(state.coins >= cost){
+    btn.classList.remove("unaffordable");
+    btn.classList.add("affordable");
+}else{
+    btn.classList.remove("affordable");
+    btn.classList.add("unaffordable");
+}
+
+let idleBtn = document.getElementById("idleBtn");
+let idleCost = getIdleCost();
+
+idleBtn.textContent = `Idle Income Lv.${state.idleLevel} (Cost: ${idleCost})`;
+
+if(state.coins >= idleCost){
+ idleBtn.classList.add("affordable");
+ idleBtn.classList.remove("unaffordable");
+}else{
+ idleBtn.classList.add("unaffordable");
+ idleBtn.classList.remove("affordable");
+}
+
 }
     document.addEventListener("click", unlockAudio, { once: true });
+
+    setInterval(()=>{
+ if(state.idleLevel > 0){
+  let income = state.idleLevel * (1 + state.luck * 0.3);
+  income *= getPrestigeMultiplier();
+
+  state.coins += Math.floor(income);
+  updateUI();
+ }
+}, 1000);
 
 // ================= RESET =================
 function reset(){
