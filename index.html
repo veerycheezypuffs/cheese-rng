@@ -30,6 +30,19 @@ body {
     gap: 15px;
 }
 
+.floating {
+  position: absolute;
+  color: gold;
+  font-size: 18px;
+  pointer-events: none;
+  animation: floatUp 0.8s ease-out forwards;
+}
+
+@keyframes floatUp {
+  0% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(-40px); opacity: 0; }
+}
+
 /* BUTTON */
 #rollBtn {
     width: 240px;
@@ -157,6 +170,13 @@ button.danger:hover {
     100% { transform: scale(1); }
 }
 
+#rollBtn {
+  transition: transform 0.05s;
+}
+#rollBtn:active {
+  transform: scale(0.85);
+}
+
 button.affordable {
     animation: pulse 0.8s infinite alternate;
 }
@@ -265,13 +285,31 @@ button.toggle {
 <b>Shop</b>
 <button id="luckBtn" class="shop" onclick="upgrade()"></button>
 <button class="shop" onclick="prestige()">Prestige (1000 rolls)</button>
-<div class="panel">
-<b>Multi Roll</b><br><br>
 
-<button class="shop" onclick="batchRoll(10)">Roll x10</button>
-<button class="shop" onclick="batchRoll(50)">Roll x50</button>
-<button class="shop" onclick="batchRoll(100)">Roll x100</button>
+<div class="panel">
+<b>PP Shop</b>
+
+<button class="shop" onclick="buyPP('rollSpeed')">
+ Faster Rolls (Cost: <span id="pp_rollSpeed_cost"></span>)
+</button>
+
+<button class="shop" onclick="buyPP('luckBoost')">
+ More Luck (Cost: <span id="pp_luckBoost_cost"></span>)
+</button>
+
+<button class="shop" onclick="buyPP('coinBoost')">
+ More Coins (Cost: <span id="pp_coinBoost_cost"></span>)
+</button>
 </div>
+
+<div class="panel">
+<b>Auto Roll</b><br><br>
+
+<button id="autoBtn" class="shop" onclick="toggleAutoRoll()">
+    Enable Auto Roll (10,000 coins)
+</button>
+</div>
+
 <div class="panel">
 
 <div class="panel">
@@ -313,6 +351,13 @@ let state={
  pp: 0,
  noCutscenes: false,
  idleLevel: 0,
+ autoRoll: false,
+ fastRoll: false,
+ meta: {
+  rollSpeed: 0,
+  luckBoost: 0,
+  coinBoost: 0
+},
 };
 
 // ====================== GOD DROP ======================
@@ -363,7 +408,9 @@ const cheeses=[
  {name:"Blue",chance:10,img:"blue.png",value:1},
  {name:"Parmesan",chance:10,img:"parmesan.png",value:1},
 
- {name:"Rare",chance:25,img:"rare.png",value:3},
+ {name:"Rare",chance:8,img:"rare.png",value:3},
+ {name:"Melted",chance:8,img:"melted.png",value:3},
+ {name:"Grilled",chance:8,img:"grilled.png",value:3},
 
  {name:"Epic",chance:2,img:"epic.png",value:7},
  {name:"Mini",chance:2,img:"mini.png",value:12},
@@ -371,35 +418,44 @@ const cheeses=[
  {name:"Radioactive",chance:2,img:"radioactive.png",value:16},
  {name:"PepperJack",chance:2,img:"pepperjack.png",value:16},
 
- {name:"Legendary",chance:3,img:"legendary.png",value:20},
- {name:"Iced",chance:2,img:"iced.png",value:40},
+ {name:"Legendary",chance:2,img:"legendary.png",value:20},
+ {name:"Iced",chance:1,img:"iced.png",value:40},
+ {name:"Square",chance:1,img:"square.png",value:40},
+ {name:"Bomb",chance:1,img:"bomb.png",value:40},
 
- {name:"Godly",chance:0.9,img:"godly.png",value:50},
- {name:"EXE",chance:0.1,img:"exe.png",value:200},
+ {name:"Godly",chance:0.4,img:"godly.png",value:50},
+ {name:"Heavenly",chance:0.2,img:"heavenly.png",value:200},
+ {name:"Devil",chance:0.2,img:"devil.png",value:200},
+ {name:"Galaxy",chance:0.1,img:"galaxy.png",value:250},
+ {name:"Glitch",chance:0.06,img:"glitch.png",value:300},
+ {name:"EXE",chance:0.03,img:"exe.png",value:400},
+ {name:"Anime Girl",chance:0.01,img:"animegirl.png",value:800},
 ];
 
 function getLuckCost(){
  return Math.floor(50 * Math.pow(1.6, state.luck));
 }
 
-function batchRoll(amount){
- if(rolling) return;
+if(state.found["Legendary"]) state.luck += 0.2;
 
- document.body.classList.add("shake");
- setTimeout(()=>document.body.classList.remove("shake"), 300);
+function getPPCost(type){
+  let lvl = state.meta[type];
+  return Math.floor(5 * Math.pow(1.8, lvl));
+}
 
- let count = 0;
+function buyPP(type){
+  let cost = getPPCost(type);
 
- function next(){
-  if(count >= amount) return;
+  if(state.pp < cost) return;
 
-  doRoll();
-  count++;
+  state.pp -= cost;
+  state.meta[type]++;
 
-  setTimeout(next, 120);
- }
+  // juicy feedback
+  document.body.classList.add("pop");
+  setTimeout(()=>document.body.classList.remove("pop"),150);
 
- next();
+  updateUI();
 }
 
 // ================== IDLE ====================
@@ -438,27 +494,50 @@ function playSound(name){
     
 // ================= SAVE =================
 function save(){localStorage.setItem("save",JSON.stringify(state))}
-function load(){let s=JSON.parse(localStorage.getItem("save")); if(s) state=s}
+function load(){
+  let s = JSON.parse(localStorage.getItem("save"));
+  if(!s) return;
+
+  state = {
+    ...state,   // keeps defaults
+    ...s        // overrides with save
+  };
+
+  // ensure meta exists (for old saves)
+  if(!state.meta){
+    state.meta = {
+      rollSpeed: 0,
+      luckBoost: 0,
+      coinBoost: 0
+    };
+  }
+}
 load();
 setInterval(save,3000);
 
 // ================= ROLL =================
 function roll(){
- let weights = cheeses.map(c=>{
+ let weights = cheeses.map(c => {
+
+  // base weight
   let w = c.chance;
 
-  // Only boost rare items with diminishing returns
-  if(c.chance <= 10){
-    w *= (1 + Math.sqrt(state.luck) * 0.35) * getPrestigeMultiplier();
-  }
+  // rarity factor (smaller chance = bigger boost)
+  let rarityFactor = Math.log10(1 + (1 / c.chance));
+
+  // apply luck scaling (tweak 0.15 if needed)
+  let luckBoost = 1 + (state.luck + state.meta.luckBoost * 0.3 * 0.08 * rarityFactor);
+
+  // apply prestige too
+  w *= luckBoost * getPrestigeMultiplier();
 
   return w;
  });
 
- // pity boosts ONLY rare pool
- weights = weights.map((w,i)=>{
-  if(cheeses[i].chance <= 10){
-    return w + state.pity;
+ // pity boosts ONLY rare items more aggressively
+ weights = weights.map((w, i) => {
+  if(cheeses[i].chance < 5){
+    return w + state.pity * 0.2;
   }
   return w;
  });
@@ -506,6 +585,10 @@ function display(c){
  let imgEl = document.getElementById("cheeseImg");
 playSound(c.name);
 
+if(c.name === "EXE"){
+  state.fastRoll = true;
+}
+
  imgEl.classList.add("pop");
 setTimeout(()=>imgEl.classList.remove("pop"),200);
 
@@ -524,7 +607,18 @@ else if(c.chance <= 4){
   setTimeout(()=>document.body.classList.remove("shake"),300);
 }
 
-let gain = Math.floor(c.value * (1 + state.luck/8));
+let gain = Math.floor(
+  c.value *
+  (1 + state.luck/8) *
+  (1 + state.meta.coinBoost * 0.25)
+);
+
+if(c.chance < 2){
+  document.body.style.background = "white";
+  setTimeout(()=>{
+    document.body.style.background = "";
+  }, 80);
+}
 
 // 🎯 CRIT SYSTEM
 let crit = false;
@@ -538,6 +632,8 @@ if(c.chance <= 10) state.streak++;
 else state.streak = 0;
 
 gain += state.streak;
+
+spawnText("+" + gain);
 
 state.coins += gain;
 
@@ -560,6 +656,19 @@ if(Math.random() < 0.03){
 
  document.getElementById("cheeseName").textContent = "BONUS +" + bonus;
 }
+}
+
+function spawnText(text){
+  let el = document.createElement("div");
+  el.className = "floating";
+  el.textContent = text;
+
+  el.style.left = (window.innerWidth/2 + (Math.random()*100-50)) + "px";
+  el.style.top = (window.innerHeight/2 + 50) + "px";
+
+  document.body.appendChild(el);
+
+  setTimeout(()=>el.remove(),800);
 }
 
 // ================= CUTSCENE =================
@@ -604,7 +713,7 @@ function upgrade(){
 }
 
 // ================= ACHIEVEMENTS =================
-const achievements=[
+const achievements = [
  {id:"r10",cond:()=>state.rolls>=10,img:"10.png"},
  {id:"r100",cond:()=>state.rolls>=100,img:"100.png"},
  {id:"r500",cond:()=>state.rolls>=500,img:"500.png"},
@@ -612,22 +721,41 @@ const achievements=[
 
  {id:"c1k",cond:()=>state.coins>=1000,img:"coin1k.png"},
  {id:"c10k",cond:()=>state.coins>=10000,img:"coin10k.png"},
+ {id:"c100k",cond:()=>state.coins>=100000,img:"coin100k.png"},
 
- {id:"legend",cond:()=>state.found["Legendary"],img:"legendary.png"},
- {id:"god",cond:()=>state.found["Godly"],img:"godly.png"},
+ // 🧀 collection based
+ {id:"completionist",cond:()=>Object.keys(state.found).length===cheeses.length,img:"all.png"},
 
+ // 💀 chaos / rare events
  {id:"streak10",cond:()=>state.streak>=10,img:"streak10.png"},
- {id:"all",cond:()=>Object.keys(state.found).length===cheeses.length,img:"all.png"},
+
+ // 👑 prestige
+ {id:"prestige1",cond:()=>state.prestige>=1,img:"prestige1.png"},
+ {id:"prestige5",cond:()=>state.prestige>=5,img:"prestige5.png"},
 ];
 
 function renderAchievements(){
- let el=document.getElementById("achievements");
- el.innerHTML="";
+ let el = document.getElementById("achievements");
+ el.innerHTML = "";
+
  achievements.forEach(a=>{
-  if(a.cond()) state.achievements[a.id]=true;
-  let img=document.createElement("img");
-  img.src=a.img;
-  img.className="achievement "+(state.achievements[a.id]?"unlocked":"");
+  let unlocked = a.cond();
+
+  if(unlocked) state.achievements[a.id] = true;
+
+  let img = document.createElement("img");
+  img.src = a.img;
+  img.className = "achievement " + (state.achievements[a.id] ? "unlocked" : "");
+
+  // ✨ hover tooltip
+  img.title = a.id;
+
+  // 🔥 pop effect when newly unlocked
+  if(unlocked && !img.dataset.done){
+    img.style.animation = "pop 0.3s ease";
+    img.dataset.done = true;
+  }
+
   el.appendChild(img);
  });
 }
@@ -678,7 +806,9 @@ function doRoll(){
 
    i++;
 
-   if(i > 6){
+   let maxSpins = state.fastRoll ? 1 : 6;
+
+if(i > maxSpins){
     let c = roll();
     state.rolls++;
     display(c);
@@ -688,7 +818,9 @@ function doRoll(){
     return;
    }
 
-   rollTimer = setTimeout(spin, 70);
+   let base = state.fastRoll ? 10 : 70;
+let speed = Math.max(15, base - state.meta.rollSpeed * 5);
+rollTimer = setTimeout(spin, speed);
 
   } catch(e){
    console.error("Roll error:", e);
@@ -714,6 +846,35 @@ function loop(){
  setTimeout(loop,150);
 }
 
+// ================ AUTO ROLL ==================
+
+let autoInterval = null;
+
+function toggleAutoRoll(){
+ if(!state.autoRoll){
+   if(state.coins < 10000) return;
+
+   state.coins -= 10000;
+   state.autoRoll = true;
+
+   autoInterval = setInterval(()=>{
+     if(!rolling){
+       doRoll();
+     }
+   }, 200);
+
+ } else {
+   state.autoRoll = false;
+
+   if(autoInterval){
+     clearInterval(autoInterval);
+     autoInterval = null;
+   }
+ }
+
+ updateUI();
+}
+
 // ================= UI =================
 function updateUI(){
  document.getElementById("rolls").textContent=state.rolls;
@@ -723,11 +884,32 @@ function updateUI(){
  document.getElementById("prestige").textContent = state.prestige;
  document.getElementById("pp").textContent = state.pp;
  document.getElementById("cutsceneToggle").textContent = state.noCutscenes ? "OFF" : "ON";
+ document.getElementById("pp_rollSpeed_cost").textContent = getPPCost("rollSpeed");
+document.getElementById("pp_luckBoost_cost").textContent = getPPCost("luckBoost");
+document.getElementById("pp_coinBoost_cost").textContent = getPPCost("coinBoost");
 
  renderCollection();
  renderAchievements();
  renderChangelog();
  save();
+
+let autoBtn = document.getElementById("autoBtn");
+
+if(state.autoRoll){
+ autoBtn.textContent = "Disable Auto Roll";
+ autoBtn.classList.remove("unaffordable");
+ autoBtn.classList.remove("affordable");
+}else{
+ autoBtn.textContent = "Enable Auto Roll (10,000 coins)";
+
+ if(state.coins >= 10000){
+   autoBtn.classList.add("affordable");
+   autoBtn.classList.remove("unaffordable");
+ }else{
+   autoBtn.classList.add("unaffordable");
+   autoBtn.classList.remove("affordable");
+ }
+}
 
 let cost = getLuckCost();
 let btn = document.getElementById("luckBtn");
@@ -760,7 +942,7 @@ if(state.coins >= idleCost){
 
     setInterval(()=>{
  if(state.idleLevel > 0){
-  let income = state.idleLevel * (1 + state.luck * 0.3);
+  let income = state.idleLevel * (1 + state.luck + state.meta.luckBoost * 0.3 * 0.3);
   income *= getPrestigeMultiplier();
 
   state.coins += Math.floor(income);
