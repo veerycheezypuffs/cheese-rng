@@ -494,9 +494,9 @@ function playSound(name){
 }
     
 // ================= SAVE =================
-function save(){localStorage.setItem("save",JSON.stringify(state))}
+function save(){localStorage.setItem("data_v1",JSON.stringify(state))}
 function load(){
-  let s = JSON.parse(localStorage.getItem("save"));
+  let s = JSON.parse(localStorage.getItem("data_v1"));
   if(!s) return;
 
   state = {
