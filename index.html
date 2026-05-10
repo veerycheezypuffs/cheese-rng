@@ -231,6 +231,32 @@ button.toggle {
     background: linear-gradient(145deg, #2a3a5a, #1a2235);
 }
 
+#mutationUI{
+ position: fixed;
+ bottom: 12px;
+ left: 12px;
+
+ display: none;
+ align-items: center;
+ gap: 8px;
+
+ background: rgba(0,0,0,0.6);
+ padding: 8px 12px;
+ border-radius: 12px;
+
+ z-index: 9999;
+}
+
+#mutationUI img{
+ width: 38px;
+ height: 38px;
+}
+
+#mutationTimer{
+ font-size: 20px;
+ color: gold;
+}
+
 /* CUTSCENE */
 #cutscene {
     position: fixed;
@@ -312,6 +338,14 @@ button.toggle {
 </div>
 
 <div class="panel">
+<b>Stats</b>
+<div id="stats"></div>
+</div>
+
+<div class="panel">
+<b>Recent Rolls</b>
+<div id="history"></div>
+</div>
 
 <div class="panel">
 <b>Achievements</b>
@@ -329,13 +363,17 @@ button.toggle {
     Cutscenes: <span id="cutsceneToggle">ON</span>
 </button>
 </div>
-
 </div>
 </div>
 
 <div id="cutscene">
-<h1>WHAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAT???!!!?!?!</h1>
+<h1>NICE!</h1>
 <img id="cutsceneImg" width="300">
+</div>
+
+<div id="mutationUI">
+  <img src="mutationBoost.png">
+  <span id="mutationTimer">0</span>
 </div>
 
 <script>
@@ -351,7 +389,6 @@ let state={
  prestige: 0,
  pp: 0,
  noCutscenes: false,
- idleLevel: 0,
  autoRoll: false,
  fastRoll: false,
  meta: {
@@ -359,6 +396,16 @@ let state={
   luckBoost: 0,
   coinBoost: 0
 },
+history: [],
+stats: {
+ totalCoins: 0,
+ rares: 0,
+ legendaries: 0,
+ crits: 0,
+ rarest: "None"
+},
+mutationBoost: 0,
+mutationBoostEnd: 0,
 };
 
 // ====================== GOD DROP ======================
@@ -395,7 +442,6 @@ if(state.noCutscenes){
 
   // sound hit (reuse your system)
   playSound(c.name);
-  playSound("sounds/giant.mp3");
 
  }, 400);
 }
@@ -437,8 +483,6 @@ function getLuckCost(){
  return Math.floor(50 * Math.pow(1.6, state.luck));
 }
 
-if(state.found["Legendary"]) state.luck += 0.2;
-
 function getPPCost(type){
   let lvl = state.meta[type];
   return Math.floor(5 * Math.pow(1.8, lvl));
@@ -459,18 +503,7 @@ function buyPP(type){
   updateUI();
 }
 
-// ================== IDLE ====================
-
-function upgradeIdle(){
- let cost = getIdleCost();
- if(state.coins < cost) return;
-
- state.coins -= cost;
- state.idleLevel++;
-
- document.body.classList.add("pop");
- setTimeout(()=>document.body.classList.remove("pop"),150);
-}
+let autoInterval = null;
 
 // ==================== SOUND ===================
 
@@ -481,7 +514,12 @@ function unlockAudio(){
  if(audioUnlocked) return;
  const a = new Audio("common.mp3");
  a.volume = 0;
- a.play().then(()=>{ a.pause(); audioUnlocked = true; });
+ a.play()
+ .then(()=>{
+   a.pause();
+   audioUnlocked = true;
+ })
+ .catch(()=>{});
 }
 
 function playSound(name){
@@ -496,7 +534,13 @@ function playSound(name){
 // ================= SAVE =================
 function save(){localStorage.setItem("data_v1",JSON.stringify(state))}
 function load(){
-  let s = JSON.parse(localStorage.getItem("data_v1"));
+  let s;
+
+try{
+ s = JSON.parse(localStorage.getItem("data_v1"));
+}catch{
+ s = null;
+}
   if(!s) return;
 
   state = {
@@ -512,8 +556,29 @@ function load(){
       coinBoost: 0
     };
   }
+
+  if(!state.history){
+ state.history = [];
+}
+
+if(!state.stats){
+ state.stats = {
+  totalCoins: 0,
+  rares: 0,
+  legendaries: 0,
+  crits: 0,
+  rarest: "None"
+ };
+}
 }
 load();
+if(state.autoRoll){
+  autoInterval = setInterval(()=>{
+    if(!rolling){
+      doRoll();
+    }
+  }, 200);
+}
 setInterval(save,3000);
 
 // ================= ROLL =================
@@ -527,7 +592,10 @@ function roll(){
   let rarityFactor = Math.log10(1 + (1 / c.chance));
 
   // apply luck scaling (tweak 0.15 if needed)
-  let luckBoost = 1 + (state.luck + state.meta.luckBoost * 0.3 * 0.08 * rarityFactor);
+  let luckBoost =
+  1 +
+  ((state.luck - 1) * 0.08 * rarityFactor) +
+  (state.meta.luckBoost * 0.03 * rarityFactor);
 
   // apply prestige too
   w *= luckBoost * getPrestigeMultiplier();
@@ -538,7 +606,7 @@ function roll(){
  // pity boosts ONLY rare items more aggressively
  weights = weights.map((w, i) => {
   if(cheeses[i].chance < 5){
-    return w + state.pity * 0.2;
+    return w + Math.min(state.pity * 0.2, 15);
   }
   return w;
  });
@@ -576,17 +644,62 @@ function prestige(){
  state.pity = 0;
  state.found = {};
  state.achievements = {};
+ state.fastRoll = false;
+
+ if(autoInterval){
+ clearInterval(autoInterval);
+ autoInterval = null;
+}
 
  alert("Prestiged! +" + gainedPP + " PP");
 }
 
 // ================= DISPLAY =================
+
+function rarityScore(c){
+ return 1 / c.chance;
+}
+
+const sketchMutationCheeses = [
+ "Legendary",
+ "Devil",
+ "Common",
+ "EXE",
+ "Heavenly"
+];
+
 function display(c){
  let nameEl = document.getElementById("cheeseName");
  let imgEl = document.getElementById("cheeseImg");
 playSound(c.name);
+let mutated = false;
 
-if(c.name === "EXE"){
+if(
+ sketchMutationCheeses.includes(c.name) &&
+ Math.random() < 0.01
+){
+ mutated = true;
+
+ state.mutationBoost = 10;
+ state.mutationBoostEnd = Date.now() + (5 * 60 * 1000);
+
+ // sketch image swap
+ document.getElementById("cheeseImg").src =
+   "sketch_" + c.img;
+
+ // special text
+ document.getElementById("cheeseName").textContent =
+   "✏️ SKETCH " + c.name;
+
+ // juicy effect
+ document.body.classList.add("shake");
+
+ setTimeout(()=>{
+   document.body.classList.remove("shake");
+ },400);
+}
+
+if(c.name === "Anime Girl"){
   state.fastRoll = true;
 }
 
@@ -608,18 +721,36 @@ else if(c.chance <= 4){
   setTimeout(()=>document.body.classList.remove("shake"),300);
 }
 
+if(c.name === "Legendary"){
+  state.luck += 0.2;
+}
+
 let gain = Math.floor(
   c.value *
   (1 + state.luck/8) *
   (1 + state.meta.coinBoost * 0.25)
 );
 
+if(Date.now() < state.mutationBoostEnd){
+ gain *= state.mutationBoost;
+}
+
 if(c.chance < 2){
   document.body.style.background = "white";
   setTimeout(()=>{
     document.body.style.background = "";
   }, 80);
+
+  state.history.unshift({
+ name: c.name,
+ rare: c.chance <= 1
+});
+
+if(state.history.length > 20){
+ state.history.pop();
 }
+}
+
 
 // 🎯 CRIT SYSTEM
 let crit = false;
@@ -638,6 +769,30 @@ spawnText("+" + gain);
 
 state.coins += gain;
 
+state.stats.totalCoins += gain;
+
+if(c.chance <= 8){
+ state.stats.rares++;
+}
+
+if(c.chance <= 1){
+ state.stats.legendaries++;
+}
+
+if(crit){
+ state.stats.crits++;
+}
+
+// rarest roll tracker
+let currentRarest = cheeses.find(x => x.name === state.stats.rarest);
+
+if(
+ !currentRarest ||
+ rarityScore(c) > rarityScore(currentRarest)
+){
+ state.stats.rarest = c.name;
+}
+
 if(crit){
  document.body.classList.add("shake");
  setTimeout(()=>document.body.classList.remove("shake"),200);
@@ -647,8 +802,6 @@ if(crit){
  else state.pity++;
 
  state.found[c.name]=true;
-
- if(c.chance<=1) cutscene(c);
 
  // small random bonus event
 if(Math.random() < 0.03){
@@ -725,7 +878,11 @@ const achievements = [
  {id:"c100k",cond:()=>state.coins>=100000,img:"coin100k.png"},
 
  // 🧀 collection based
- {id:"completionist",cond:()=>Object.keys(state.found).length===cheeses.length,img:"all.png"},
+ {
+ id:"completionist",
+ cond:()=>cheeses.every(c => state.found[c.name]),
+ img:"all.png"
+},
 
  // 💀 chaos / rare events
  {id:"streak10",cond:()=>state.streak>=10,img:"streak10.png"},
@@ -759,6 +916,38 @@ function renderAchievements(){
 
   el.appendChild(img);
  });
+}
+
+function renderHistory(){
+ let el = document.getElementById("history");
+
+ el.innerHTML = "";
+
+ state.history.forEach(h => {
+  let div = document.createElement("div");
+
+  div.textContent = h.name;
+
+  if(h.rare){
+   div.style.color = "gold";
+   div.style.fontWeight = "bold";
+  }
+
+  el.appendChild(div);
+ });
+}
+
+function renderStats(){
+ let el = document.getElementById("stats");
+
+ el.innerHTML = `
+ Total Rolls: ${state.rolls}<br>
+ Total Coins Earned: ${state.stats.totalCoins}<br>
+ Rare Pulls: ${state.stats.rares}<br>
+ Legendary Pulls: ${state.stats.legendaries}<br>
+ Crits: ${state.stats.crits}<br>
+ Rarest Roll: ${state.stats.rarest}
+ `;
 }
 
 // ================= CHANGELOG =================
@@ -841,15 +1030,22 @@ btn.onmousedown=()=>{
 btn.onmouseup=()=>holding=false;
 btn.onmouseleave=()=>holding=false;
 
+btn.ontouchstart = () => {
+ holding = true;
+ loop();
+};
+
+btn.ontouchend = () => {
+ holding = false;
+};
+
 function loop(){
  if(!holding) return;
  doRoll();
- setTimeout(loop,150);
+ setTimeout(loop,220);
 }
 
 // ================ AUTO ROLL ==================
-
-let autoInterval = null;
 
 function toggleAutoRoll(){
  if(!state.autoRoll){
@@ -891,8 +1087,10 @@ document.getElementById("pp_coinBoost_cost").textContent = getPPCost("coinBoost"
 
  renderCollection();
  renderAchievements();
+ renderStats();
+ renderHistory();
  renderChangelog();
- save();
+
 
 let autoBtn = document.getElementById("autoBtn");
 
@@ -925,39 +1123,40 @@ if(state.coins >= cost){
     btn.classList.add("unaffordable");
 }
 
-let idleBtn = document.getElementById("idleBtn");
-let idleCost = getIdleCost();
+const mutationUI = document.getElementById("mutationUI");
+const mutationTimer = document.getElementById("mutationTimer");
 
-idleBtn.textContent = `Idle Income Lv.${state.idleLevel} (Cost: ${idleCost})`;
+if(Date.now() < state.mutationBoostEnd){
 
-if(state.coins >= idleCost){
- idleBtn.classList.add("affordable");
- idleBtn.classList.remove("unaffordable");
+ mutationUI.style.display = "flex";
+
+ let secs = Math.ceil(
+   (state.mutationBoostEnd - Date.now()) / 1000
+ );
+
+ mutationTimer.textContent = secs + "s";
+
 }else{
- idleBtn.classList.add("unaffordable");
- idleBtn.classList.remove("affordable");
+ mutationUI.style.display = "none";
 }
 
 }
     document.addEventListener("click", unlockAudio, { once: true });
 
-    setInterval(()=>{
- if(state.idleLevel > 0){
-  let income = state.idleLevel * (1 + state.luck + state.meta.luckBoost * 0.3 * 0.3);
-  income *= getPrestigeMultiplier();
-
-  state.coins += Math.floor(income);
-  updateUI();
- }
-}, 1000);
-
 // ================= RESET =================
 function reset(){
+ state.fastRoll = false;
+ if(autoInterval){
+ clearInterval(autoInterval);
+ autoInterval = null;
+}
  localStorage.clear();
  location.reload();
 }
 
 updateUI();
+
+setInterval(updateUI, 250);
 
 </script>
 
