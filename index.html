@@ -247,6 +247,62 @@ button.toggle {
  z-index: 9999;
 }
 
+    /* DISCORD BUTTON */
+#discordBtn{
+    width: 90px;
+    height: 90px;
+    background: url("discord.png") center/cover no-repeat;
+    border: none;
+    cursor: pointer;
+
+    border-radius: 24px;
+
+    transition:
+        transform 0.08s ease,
+        filter 0.15s ease,
+        box-shadow 0.15s ease;
+
+    box-shadow:
+        0 0 12px rgba(88,101,242,0.4),
+        0 8px 20px rgba(0,0,0,0.45);
+
+    animation: discordPulse 2s infinite ease-in-out;
+}
+
+/* hover */
+#discordBtn:hover{
+    transform: translateY(-4px) scale(1.08);
+    filter: brightness(1.2);
+
+    box-shadow:
+        0 0 22px rgba(88,101,242,0.9),
+        0 12px 30px rgba(0,0,0,0.6);
+}
+
+/* click satisfaction */
+#discordBtn:active{
+    transform: scale(0.82);
+
+    box-shadow:
+        0 0 40px rgba(88,101,242,1),
+        inset 0 0 25px rgba(255,255,255,0.25);
+}
+
+/* breathing pulse */
+@keyframes discordPulse{
+    0%{
+        transform: scale(1);
+    }
+
+    50%{
+        transform: scale(1.04);
+    }
+
+    100%{
+        transform: scale(1);
+    }
+}
+
 #mutationUI img{
  width: 38px;
  height: 38px;
@@ -293,6 +349,9 @@ button.toggle {
 <div class="left">
     <button id="rollBtn"></button>
     <button class="danger" onclick="reset()">Reset</button>
+    <a href="https://discord.gg/G2t7xS3zjj" target="_blank">
+    <button id="discordBtn"></button>
+</a>
 </div>
 
 <div class="center">
